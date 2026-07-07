@@ -1,2 +1,46 @@
-# Minimizing-DFA-tester
-Application for testing algorithms for minimizing deterministic finite automata
+# DFA Minimizer
+
+Однооконное приложение PyQt6 для загрузки и обработки детерминированных конечных автоматов. Алгоритм минимизации подключается через отдельный Python-класс.
+
+> Текущая реализация `PassthroughMinimizer` является заглушкой: она возвращает исходный ДКА. Замените её проектным алгоритмом, реализующим `DFAMinimizer`.
+
+## Формат входных файлов
+
+Поддерживаются `.txt`, `.csv` и `.xlsx`. Первая строка содержит пять заголовков:
+
+```text
+states;alphabet;transitions;initial;finals
+```
+
+В TXT/CSV колонки разделяются `;`. В Excel каждое значение находится в отдельной ячейке. Списки разделяются `|`, переход имеет вид `исходное_состояние,символ->целевое_состояние`.
+
+```text
+q0|q1;0|1;q0,0->q0|q0,1->q1|q1,0->q0|q1,1->q1;q0;q1
+```
+
+Файлы TXT/CSV должны быть в UTF-8. Некорректные строки пропускаются и отображаются в списке ошибок.
+
+## Разработка
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev]"
+run app
+run test
+```
+
+После установки проекта и активации `.venv` команды работают без префикса `.\` в PowerShell и `cmd.exe`.
+
+Нативный PyQt-интерфейс тестируется через `pytest-qt`; Playwright не используется, поскольку не управляет Qt-виджетами.
+
+## Подключение алгоритма
+
+Создайте реализацию `DFAMinimizer` с методом `minimize(dfa) -> DFA` и свойством `metadata`. Затем передайте её в `DFAProcessingService` в `application.py`. Результат алгоритма повторно валидируется перед выводом.
+
+## Сборка EXE
+
+```powershell
+run build
+```
+
+Готовый файл: `release\DFA-Minimizer.exe`. Это one-file сборка без консольного окна.
