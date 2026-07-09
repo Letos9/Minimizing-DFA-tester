@@ -11,7 +11,7 @@ VALID = "q0|q1;0|1;q0,0->q0|q0,1->q1|q1,0->q0|q1,1->q1;q0;q1\n"
 
 def test_load_csv_skips_invalid_rows(tmp_path: Path):
     path = tmp_path / "automata.csv"
-    path.write_text(HEADER + VALID + "q0;0;;q0;q0\n", encoding="utf-8")
+    path.write_text(HEADER + VALID + "q0;0;q0,0->missing;q0;q0\n", encoding="utf-8")
 
     loaded = load_automata(path)
 
@@ -65,4 +65,3 @@ def test_unsupported_extension_returns_error(tmp_path: Path):
     path.write_text("{}", encoding="utf-8")
 
     assert "неподдерживаемый" in load_automata(path).errors[0].message
-

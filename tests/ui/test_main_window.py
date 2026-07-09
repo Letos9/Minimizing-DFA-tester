@@ -10,7 +10,7 @@ def input_file(tmp_path: Path) -> Path:
     path.write_text(
         "states;alphabet;transitions;initial;finals\n"
         "q0|q1;0;q0,0->q1|q1,0->q1;q0;q1\n"
-        "bad;0;;bad;bad\n",
+        "bad;0;bad,0->missing;bad;bad\n",
         encoding="utf-8",
     )
     return path

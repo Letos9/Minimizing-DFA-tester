@@ -2,8 +2,6 @@
 
 from collections.abc import Mapping
 
-import pytest
-
 from dfa_app.algorithms.minimizer import PassthroughMinimizer
 from dfa_app.domain.models import DFA, TransitionKey
 
@@ -42,6 +40,23 @@ def dfa_with_equivalent_final_states() -> DFA:
             ("q1", "1"): "q2",
             ("q2", "0"): "q1",
             ("q2", "1"): "q2",
+        },
+        initial_state="q0",
+        final_states=frozenset({"q1", "q2"}),
+    )
+
+
+def partial_dfa_with_equivalent_final_states() -> DFA:
+    """PT-DFA, в котором часть переходов не задана."""
+
+    return DFA(
+        states=("q0", "q1", "q2"),
+        alphabet=("0", "1"),
+        transitions={
+            ("q0", "0"): "q1",
+            ("q0", "1"): "q2",
+            ("q1", "0"): "q1",
+            ("q2", "0"): "q2",
         },
         initial_state="q0",
         final_states=frozenset({"q1", "q2"}),
@@ -132,6 +147,25 @@ def test_merges_equivalent_final_states() -> None:
     )
 
 
+def test_minimizes_partial_transition_function() -> None:
+    """Отсутствующие переходы PT-DFA не должны достраиваться фиктивным состоянием."""
+
+    minimized = PassthroughMinimizer().minimize(partial_dfa_with_equivalent_final_states())
+
+    assert_minimized_dfa(
+        minimized,
+        alphabet=("0", "1"),
+        state_count=2,
+        transitions={
+            ("{q0}", "0"): "{q1,q2}",
+            ("{q0}", "1"): "{q1,q2}",
+            ("{q1,q2}", "0"): "{q1,q2}",
+        },
+        initial_state="{q0}",
+        final_states=frozenset({"{q1,q2}"}),
+    )
+
+
 def test_keeps_distinguishable_states_separate() -> None:
     """Конечное и неконечное состояния нельзя объединять."""
 
@@ -170,20 +204,25 @@ def test_removes_unreachable_state_before_minimization() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("all_final", "expected_final_states"),
-    [
-        pytest.param(False, frozenset(), id="no-final-states"),
-        pytest.param(True, frozenset({"{q0,q1}"}), id="all-states-final"),
-    ],
-)
-def test_merges_all_equivalent_states(
-    all_final: bool,
-    expected_final_states: frozenset[str],
-) -> None:
+def test_returns_empty_pt_dfa_for_empty_language() -> None:
+    """Если финальных состояний нет, алгоритм возвращает минимальный PT-DFA пустого языка."""
+
+    minimized = PassthroughMinimizer().minimize(equivalent_dfa(all_final=False))
+
+    assert_minimized_dfa(
+        minimized,
+        alphabet=("0",),
+        state_count=1,
+        transitions={},
+        initial_state="{empty}",
+        final_states=frozenset(),
+    )
+
+
+def test_merges_all_equivalent_states() -> None:
     """Все эквивалентные состояния должны схлопнуться в один блок."""
 
-    minimized = PassthroughMinimizer().minimize(equivalent_dfa(all_final=all_final))
+    minimized = PassthroughMinimizer().minimize(equivalent_dfa(all_final=True))
 
     assert_minimized_dfa(
         minimized,
@@ -191,7 +230,7 @@ def test_merges_all_equivalent_states(
         state_count=1,
         transitions={("{q0,q1}", "0"): "{q0,q1}"},
         initial_state="{q0,q1}",
-        final_states=expected_final_states,
+        final_states=frozenset({"{q0,q1}"}),
     )
 
 
@@ -212,4 +251,3 @@ def test_preserves_number_of_states_for_already_minimal_dfa() -> None:
         initial_state="{q0}",
         final_states=frozenset({"{q0}"}),
     )
-
