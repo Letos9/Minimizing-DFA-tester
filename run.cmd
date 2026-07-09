@@ -24,7 +24,7 @@ exit /b %ERRORLEVEL%
 
 :test
 set "QT_QPA_PLATFORM=offscreen"
-"%PY%" -m pytest
+"%PY%" -m pytest "%ROOT%tests\test_dfa_minimization.py"
 exit /b %ERRORLEVEL%
 
 :build
@@ -37,4 +37,3 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 echo.
 echo Ready: %ROOT%release\DFA-Minimizer.exe
 exit /b 0
-
