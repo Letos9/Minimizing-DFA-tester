@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from dfa_app.algorithms.minimizer import PassthroughMinimizer
+from dfa_app.algorithms.pt_dfa_minimizer import PTDFAMinimizer
 from dfa_app.domain.models import DFA, TransitionKey
 
 
@@ -130,7 +130,7 @@ def already_minimal_dfa() -> DFA:
 def test_merges_equivalent_final_states() -> None:
     """Эквивалентные конечные состояния должны образовать один блок."""
 
-    minimized = PassthroughMinimizer().minimize(dfa_with_equivalent_final_states())
+    minimized = PTDFAMinimizer().minimize(dfa_with_equivalent_final_states())
 
     assert_minimized_dfa(
         minimized,
@@ -150,7 +150,7 @@ def test_merges_equivalent_final_states() -> None:
 def test_minimizes_partial_transition_function() -> None:
     """Отсутствующие переходы PT-DFA не должны достраиваться фиктивным состоянием."""
 
-    minimized = PassthroughMinimizer().minimize(partial_dfa_with_equivalent_final_states())
+    minimized = PTDFAMinimizer().minimize(partial_dfa_with_equivalent_final_states())
 
     assert_minimized_dfa(
         minimized,
@@ -169,7 +169,7 @@ def test_minimizes_partial_transition_function() -> None:
 def test_keeps_distinguishable_states_separate() -> None:
     """Конечное и неконечное состояния нельзя объединять."""
 
-    minimized = PassthroughMinimizer().minimize(distinguishable_dfa())
+    minimized = PTDFAMinimizer().minimize(distinguishable_dfa())
 
     assert_minimized_dfa(
         minimized,
@@ -189,7 +189,7 @@ def test_keeps_distinguishable_states_separate() -> None:
 def test_removes_unreachable_state_before_minimization() -> None:
     """Недостижимое состояние не должно попадать в минимальный ДКА."""
 
-    minimized = PassthroughMinimizer().minimize(dfa_with_unreachable_state())
+    minimized = PTDFAMinimizer().minimize(dfa_with_unreachable_state())
 
     assert_minimized_dfa(
         minimized,
@@ -207,14 +207,14 @@ def test_removes_unreachable_state_before_minimization() -> None:
 def test_returns_empty_pt_dfa_for_empty_language() -> None:
     """Если финальных состояний нет, алгоритм возвращает минимальный PT-DFA пустого языка."""
 
-    minimized = PassthroughMinimizer().minimize(equivalent_dfa(all_final=False))
+    minimized = PTDFAMinimizer().minimize(equivalent_dfa(all_final=False))
 
     assert_minimized_dfa(
         minimized,
         alphabet=("0",),
         state_count=1,
         transitions={},
-        initial_state="{empty}",
+        initial_state="{пустой}",
         final_states=frozenset(),
     )
 
@@ -222,7 +222,7 @@ def test_returns_empty_pt_dfa_for_empty_language() -> None:
 def test_merges_all_equivalent_states() -> None:
     """Все эквивалентные состояния должны схлопнуться в один блок."""
 
-    minimized = PassthroughMinimizer().minimize(equivalent_dfa(all_final=True))
+    minimized = PTDFAMinimizer().minimize(equivalent_dfa(all_final=True))
 
     assert_minimized_dfa(
         minimized,
@@ -237,7 +237,7 @@ def test_merges_all_equivalent_states() -> None:
 def test_preserves_number_of_states_for_already_minimal_dfa() -> None:
     """Уже минимальный автомат должен сохранить три различимых состояния."""
 
-    minimized = PassthroughMinimizer().minimize(already_minimal_dfa())
+    minimized = PTDFAMinimizer().minimize(already_minimal_dfa())
 
     assert_minimized_dfa(
         minimized,

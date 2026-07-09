@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dfa_app.algorithms.minimizer import PassthroughMinimizer
+from dfa_app.algorithms.pt_dfa_minimizer import PTDFAMinimizer
 from dfa_app.services.processing import DFAProcessingService
 from dfa_app.ui.main_window import MainWindow
 
@@ -17,7 +17,7 @@ def input_file(tmp_path: Path) -> Path:
 
 
 def test_window_loads_results_errors_and_chart(qtbot, tmp_path: Path):
-    window = MainWindow(DFAProcessingService(PassthroughMinimizer()))
+    window = MainWindow(DFAProcessingService(PTDFAMinimizer()))
     qtbot.addWidget(window)
     window.show()
 
@@ -31,7 +31,7 @@ def test_window_loads_results_errors_and_chart(qtbot, tmp_path: Path):
 
 
 def test_window_clears_previous_results_when_file_has_no_valid_rows(qtbot, tmp_path: Path):
-    window = MainWindow(DFAProcessingService(PassthroughMinimizer()))
+    window = MainWindow(DFAProcessingService(PTDFAMinimizer()))
     qtbot.addWidget(window)
     window.load_file(str(input_file(tmp_path)))
     empty = tmp_path / "empty.csv"
