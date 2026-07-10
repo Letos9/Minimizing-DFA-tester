@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -17,16 +19,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from dfa_app.services.processing import DFAProcessingService, ProcessingResult
-from dfa_app.ui.complexity_chart import ComplexityChart
+from dfa_app.services.processing import DFAProcessingService, ProcessedDFA, ProcessingResult
+from dfa_app.ui.automata_graph import AutomataGraphView
 
 
 class MainWindow(QMainWindow):
     def __init__(self, service: DFAProcessingService) -> None:
         super().__init__()
         self.service = service
+        self._processed_items: tuple[ProcessedDFA, ...] = ()
+        self.setFont(QFont("Segoe UI", 10))
         self.setWindowTitle("Минимизация ДКА")
-        self.resize(1100, 760)
+        self.resize(1280, 850)
 
         self.load_button = QPushButton("Загрузить файл")
         self.load_button.setObjectName("loadFileButton")
@@ -37,9 +41,11 @@ class MainWindow(QMainWindow):
         self.results_table.setObjectName("resultsTable")
         self.results_table.setHorizontalHeaderLabels(("№", "Состояний до", "Состояний после", "Алфавит"))
         self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.results_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.error_list = QListWidget()
         self.error_list.setObjectName("errorList")
-        self.chart = ComplexityChart()
+        self.chart = AutomataGraphView()
 
         top = QHBoxLayout()
         top.addWidget(self.load_button)
@@ -55,7 +61,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(data_panel)
         splitter.addWidget(self.chart)
-        splitter.setSizes((300, 430))
+        splitter.setSizes((255, 555))
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -64,6 +70,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.load_button.clicked.connect(self.choose_file)
+        self.results_table.currentCellChanged.connect(self._show_selected_automaton)
 
     def choose_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -81,6 +88,7 @@ class MainWindow(QMainWindow):
         self._show_result(result)
 
     def _show_result(self, result: ProcessingResult) -> None:
+        self._processed_items = result.items
         self.results_table.setRowCount(len(result.items))
         for row, item in enumerate(result.items):
             values = (str(row + 1), str(item.source.size), str(item.minimized.size), str(len(item.source.alphabet)))
@@ -92,6 +100,19 @@ class MainWindow(QMainWindow):
             self.error_list.addItem(f"Строка {error.row_number}: {error.message}")
 
         if result.items:
-            self.chart.update_chart(result.items)
+            self.results_table.selectRow(0)
+            self.chart.show_comparison(result.items[0])
         else:
-            self.chart.clear_chart()
+            self.chart.clear_view()
+
+    def _show_selected_automaton(
+        self,
+        current_row: int,
+        _current_column: int,
+        _previous_row: int,
+        _previous_column: int,
+    ) -> None:
+        """Обновляет пару графов при выборе другой строки результата."""
+
+        if 0 <= current_row < len(self._processed_items):
+            self.chart.show_comparison(self._processed_items[current_row])
