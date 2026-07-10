@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
             self,
             "Выберите файл с ДКА",
             "",
-            "Файлы ДКА (*.txt *.csv *.xlsx)",
+            "Файлы ДКА (*.txt *.csv *.xlsx *.dot *.gv)",
         )
         if file_path:
             self.load_file(file_path)
