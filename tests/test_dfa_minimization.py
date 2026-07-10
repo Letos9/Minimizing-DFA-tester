@@ -1,9 +1,11 @@
 """TDD-тесты реального алгоритма минимизации ДКА."""
 
 from collections.abc import Mapping
+from math import isnan
 
 from dfa_app.algorithms.pt_dfa_minimizer import PTDFAMinimizer
 from dfa_app.domain.models import DFA, TransitionKey
+from dfa_app.domain.validation import validate_dfa
 
 
 def assert_minimized_dfa(
@@ -251,3 +253,52 @@ def test_preserves_number_of_states_for_already_minimal_dfa() -> None:
         initial_state="{q0}",
         final_states=frozenset({"{q0}"}),
     )
+
+
+def test_keeps_generated_block_names_unique() -> None:
+    """Разные блоки не должны схлопываться из-за одинакового строкового имени."""
+
+    # Блок из двух состояний {a, b} и блок из одного состояния с именем "a,b"
+    # имеют одинаковое естественное отображение "{a,b}". Алгоритм обязан
+    # различить их, иначе словарь переходов потеряет часть рёбер.
+    dfa = DFA(
+        states=("q0", "a", "b", "a,b"),
+        alphabet=("0", "1", "2", "x"),
+        transitions={
+            ("q0", "0"): "a",
+            ("q0", "1"): "b",
+            ("q0", "2"): "a,b",
+            ("a", "x"): "a",
+            ("b", "x"): "b",
+        },
+        initial_state="q0",
+        final_states=frozenset({"a", "b", "a,b"}),
+    )
+
+    minimized = PTDFAMinimizer().minimize(dfa)
+
+    validate_dfa(minimized)
+    assert_minimized_dfa(
+        minimized,
+        alphabet=("0", "1", "2", "x"),
+        state_count=3,
+        transitions={
+            ("{a,b}", "x"): "{a,b}",
+            ("{q0}", "0"): "{a,b}",
+            ("{q0}", "1"): "{a,b}",
+            ("{q0}", "2"): "{a,b}#2",
+        },
+        initial_state="{q0}",
+        final_states=frozenset({"{a,b}", "{a,b}#2"}),
+    )
+
+
+def test_metadata_contains_callable_bounds() -> None:
+    """Численные границы метаданных должны соблюдать контракт AlgorithmMetadata."""
+
+    metadata = PTDFAMinimizer().metadata
+
+    assert callable(metadata.upper_bound)
+    assert callable(metadata.lower_bound)
+    assert metadata.upper_bound(8, 3) > 0
+    assert isnan(metadata.lower_bound(8, 3))
