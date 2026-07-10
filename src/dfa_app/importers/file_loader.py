@@ -8,6 +8,7 @@ from typing import Iterable
 from openpyxl import load_workbook
 
 from dfa_app.domain.models import DFA
+from dfa_app.importers.dot_parser import DotParseError, parse_dot
 from dfa_app.importers.parser import EXPECTED_HEADERS, parse_row
 
 
@@ -76,6 +77,17 @@ def _load_excel(path: Path) -> LoadedAutomata:
         workbook.close()
 
 
+def _load_dot(path: Path) -> LoadedAutomata:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return LoadedAutomata((), (RowError(1, "файл должен иметь кодировку UTF-8"),))
+    try:
+        return LoadedAutomata((parse_dot(text),), ())
+    except DotParseError as exc:
+        return LoadedAutomata((), (RowError(exc.line_number, str(exc)),))
+
+
 def load_automata(file_path: str | Path) -> LoadedAutomata:
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -83,5 +95,6 @@ def load_automata(file_path: str | Path) -> LoadedAutomata:
         return _load_delimited(path)
     if suffix == ".xlsx":
         return _load_excel(path)
+    if suffix in {".dot", ".gv"}:
+        return _load_dot(path)
     return LoadedAutomata((), (RowError(1, f"неподдерживаемый формат файла: {suffix or '<без расширения>'}"),))
-
