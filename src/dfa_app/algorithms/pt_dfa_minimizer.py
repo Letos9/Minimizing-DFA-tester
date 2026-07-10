@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from math import log2, nan
 from typing import Iterable, Iterator
 
-from dfa_app.algorithms.base import AlgorithmMetadata, DFAMinimizer
+from dfa_app.algorithms.base import AlgorithmMetadata, DFAMinimizer, MinimizationResult
 from dfa_app.domain.models import DFA, TransitionKey
 
 
@@ -248,7 +248,7 @@ class PTDFAMinimizer(DFAMinimizer):
             lower_bound=lambda _n, _alphabet_size: nan,
         )
 
-    def minimize(self, dfa: DFA) -> DFA:
+    def minimize(self, dfa: DFA) -> MinimizationResult:
         # Figure 1, строка 1. Это не только оптимизация, но и условие
         # корректности для частичной функции переходов: состояние с пустым
         # правым языком нельзя отличать от отсутствующего перехода.
@@ -258,13 +258,17 @@ class PTDFAMinimizer(DFAMinimizer):
         # Минимальный PT-DFA пустого языка содержит ровно одно состояние и ни
         # одного перехода.
         if not final_states:
-            empty_state = "{пустой}"
-            return DFA(
-                states=(empty_state,),
+            minimized = DFA(
+                states=("C0",),
                 alphabet=dfa.alphabet,
                 transitions={},
-                initial_state=empty_state,
+                initial_state="C0",
                 final_states=frozenset(),
+            )
+            return MinimizationResult(
+                dfa=minimized,
+                classes={"C0": frozenset({dfa.initial_state})},
+                discarded_states=frozenset(set(dfa.states) - {dfa.initial_state}),
             )
 
         indexed = self._index_automaton(states, transitions)
@@ -278,12 +282,18 @@ class PTDFAMinimizer(DFAMinimizer):
 
         # Figure 1, строки 16-21. Строим фактор-автомат только по заданным
         # исходящим переходам представителей, не выполняя цикл по всему Sigma.
-        return self._build_minimized_dfa(
+        minimized, classes = self._build_minimized_dfa(
             dfa.alphabet,
             indexed,
             indexed.state_index[dfa.initial_state],
             final_indices,
             blocks,
+        )
+        represented = frozenset().union(*classes.values())
+        return MinimizationResult(
+            dfa=minimized,
+            classes=classes,
+            discarded_states=frozenset(set(dfa.states) - represented),
         )
 
     def _index_automaton(
@@ -490,7 +500,7 @@ class PTDFAMinimizer(DFAMinimizer):
         initial_state: int,
         final_states: frozenset[int],
         blocks: _RefinablePartition,
-    ) -> DFA:
+    ) -> tuple[DFA, dict[str, frozenset[str]]]:
         """Строит минимальный PT-DFA по итоговым блокам за O(n log n + m).
 
         Сортировка имён нужна только для стабильного человекочитаемого вывода.
@@ -507,39 +517,26 @@ class PTDFAMinimizer(DFAMinimizer):
             )
             for block_id in range(blocks.set_count)
         }
-        base_name_by_block = {
-            block_id: self._block_name(
+        initial_block = blocks.set_of(initial_state)
+        other_blocks = sorted(
+            (block_id for block_id in range(blocks.set_count) if block_id != initial_block),
+            key=lambda block_id: tuple(
                 indexed.state_names[state_id]
-                for state_id in state_ids
-            )
-            for block_id, state_ids in members_by_block.items()
-        }
-
-        # Обычно каноническое имя уже уникально. Однако допустимые исходные
-        # идентификаторы "a", "b" и "a,b" создают одинаковую строку для блоков
-        # {a,b} и {"a,b"}. Суффиксы сохраняют читаемость и гарантируют валидный
-        # набор состояний результата.
-        ordered_blocks = tuple(
-            sorted(
-                range(blocks.set_count),
-                key=lambda block_id: (
-                    base_name_by_block[block_id],
-                    tuple(
-                        indexed.state_names[state_id]
-                        for state_id in members_by_block[block_id]
-                    ),
-                ),
-            )
+                for state_id in members_by_block[block_id]
+            ),
         )
-        block_names: dict[int, str] = {}
-        name_occurrences: dict[str, int] = {}
-        for block_id in ordered_blocks:
-            base_name = base_name_by_block[block_id]
-            occurrence = name_occurrences.get(base_name, 0) + 1
-            name_occurrences[base_name] = occurrence
-            block_names[block_id] = (
-                base_name if occurrence == 1 else f"{base_name}#{occurrence}"
+        ordered_blocks = (initial_block, *other_blocks)
+        block_names = {
+            block_id: f"C{index}"
+            for index, block_id in enumerate(ordered_blocks)
+        }
+        classes = {
+            block_names[block_id]: frozenset(
+                indexed.state_names[state_id]
+                for state_id in members_by_block[block_id]
             )
+            for block_id in ordered_blocks
+        }
 
         minimized_transitions: dict[TransitionKey, str] = {}
         minimized_final_states: set[str] = set()
@@ -561,19 +558,14 @@ class PTDFAMinimizer(DFAMinimizer):
             if any(state_id in final_states for state_id in state_ids):
                 minimized_final_states.add(source_name)
 
-        initial_block = blocks.set_of(initial_state)
-        return DFA(
+        minimized = DFA(
             states=tuple(block_names[block_id] for block_id in ordered_blocks),
             alphabet=alphabet,
             transitions=minimized_transitions,
             initial_state=block_names[initial_block],
             final_states=frozenset(minimized_final_states),
         )
-
-    def _block_name(self, states: Iterable[str]) -> str:
-        """Создаёт привычное каноническое имя блока из отсортированных имён."""
-
-        return "{" + ",".join(states) + "}"
+        return minimized, classes
 
 
 # Обратная совместимость для импортов, существовавших до переименования класса.

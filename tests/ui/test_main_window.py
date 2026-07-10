@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from dfa_app.algorithms.pt_dfa_minimizer import PTDFAMinimizer
+from dfa_app.algorithms.base import MinimizationResult
 from dfa_app.domain.models import DFA
 from dfa_app.services.processing import DFAProcessingService, ProcessedDFA
 from dfa_app.ui.automata_graph import AutomataGraphView
@@ -35,6 +36,17 @@ def cycle_dfa(state_count: int) -> DFA:
     )
 
 
+def processed(dfa: DFA) -> ProcessedDFA:
+    return ProcessedDFA(
+        dfa,
+        MinimizationResult(
+            dfa=dfa,
+            classes={state: frozenset({state}) for state in dfa.states},
+            discarded_states=frozenset(),
+        ),
+    )
+
+
 def test_window_loads_results_errors_and_automata_graphs(qtbot, tmp_path: Path):
     window = MainWindow(DFAProcessingService(PTDFAMinimizer()))
     qtbot.addWidget(window)
@@ -47,7 +59,7 @@ def test_window_loads_results_errors_and_automata_graphs(qtbot, tmp_path: Path):
     assert window.results_table.item(0, 1).text() == "2"
     assert window.error_list.count() == 1
     assert window.chart.objectName() == "automataGraphView"
-    assert len(window.chart.figure.axes) == 3
+    assert len(window.chart.figure.axes) == 2
     assert window.chart.figure.axes[0].get_title() == "Исходный автомат · 2 сост."
     assert window.chart.figure.axes[1].get_title() == "Минимизированный · 2 сост."
     # На каждой панели есть окружности состояний и стрелки переходов.
@@ -78,7 +90,7 @@ def test_window_clears_previous_results_when_file_has_no_valid_rows(qtbot, tmp_p
 
     assert window.results_table.rowCount() == 0
     assert window.error_list.count() == 1
-    assert len(window.chart.figure.axes) == 3
+    assert len(window.chart.figure.axes) == 2
     assert window.chart.figure.axes[0].texts[0].get_text() == "Загрузите файл с автоматами"
 
 
@@ -129,7 +141,7 @@ def test_automaton_over_fifteen_states_shows_summary(qtbot):
     view = AutomataGraphView()
     qtbot.addWidget(view)
 
-    view.show_comparison(ProcessedDFA(dfa, dfa))
+    view.show_comparison(processed(dfa))
 
     assert not view.figure.axes[0].patches
     assert any(
@@ -145,7 +157,7 @@ def test_fifteen_states_are_still_drawn_as_graph(qtbot):
     view = AutomataGraphView()
     qtbot.addWidget(view)
 
-    view.show_comparison(ProcessedDFA(dfa, dfa))
+    view.show_comparison(processed(dfa))
 
     assert len(view.figure.axes[0].patches) >= dfa.size
     assert not any("больше 15" in text.get_text() for text in view.figure.axes[0].texts)
@@ -158,7 +170,7 @@ def test_large_automaton_shows_summary_instead_of_graph(qtbot):
     view = AutomataGraphView()
     qtbot.addWidget(view)
 
-    view.show_comparison(ProcessedDFA(dfa, dfa))
+    view.show_comparison(processed(dfa))
 
     for axes in view.figure.axes[:2]:
         assert not axes.patches
@@ -166,81 +178,50 @@ def test_large_automaton_shows_summary_instead_of_graph(qtbot):
             "больше 15" in text.get_text()
             for text in axes.texts
         )
-    assert not view.figure.axes[2].tables
 
 
-def test_minimized_classes_receive_short_names_and_table(qtbot):
-    """Классы получают имена M0, M1 и расшифровываются справа."""
-
-    source = DFA(
-        states=("A", "B", "C"),
-        alphabet=("0",),
-        transitions={("A", "0"): "B", ("B", "0"): "B", ("C", "0"): "B"},
-        initial_state="A",
-        final_states=frozenset({"B"}),
-    )
-    minimized = DFA(
-        states=("{A,C}", "{B}"),
-        alphabet=("0",),
-        transitions={("{A,C}", "0"): "{B}", ("{B}", "0"): "{B}"},
-        initial_state="{A,C}",
-        final_states=frozenset({"{B}"}),
-    )
-    view = AutomataGraphView()
-    qtbot.addWidget(view)
-
-    view.show_comparison(ProcessedDFA(source, minimized))
-
-    minimized_texts = {text.get_text() for text in view.figure.axes[1].texts}
-    assert {"M0", "M1"} <= minimized_texts
-    table_texts = {
-        cell.get_text().get_text()
-        for table in view.figure.axes[2].tables
-        for cell in table.get_celld().values()
-    }
-    assert {"M0", "A, C", "M1", "B"} <= table_texts
-
-
-def test_long_class_members_are_wrapped_inside_table(qtbot):
-    """Длинный состав класса переносится и не расширяет ячейку за панель."""
-
-    view = AutomataGraphView()
-    qtbot.addWidget(view)
-
-    wrapped = view._class_members_text(
-        "{detail_boundary_0,detail_boundary_5,detail_boundary_10}"
-    )
-
-    assert "\n" in wrapped
-    assert all(len(line) <= 25 for line in wrapped.splitlines())
-
-
-def test_classes_table_stays_below_its_title(qtbot):
-    """Шапка таблицы не должна накладываться на заголовок панели."""
+def test_graph_panel_titles_have_same_vertical_position(qtbot):
+    """Заголовки двух графов находятся на одной линии."""
 
     dfa = cycle_dfa(5)
     view = AutomataGraphView()
     qtbot.addWidget(view)
-    view.show_comparison(ProcessedDFA(dfa, dfa))
+    view.show_comparison(processed(dfa))
     view.draw()
 
-    axes = view.figure.axes[2]
-    renderer = view.figure.canvas.get_renderer()
-    table_box = axes.tables[0].get_window_extent(renderer)
-    title_box = view.figure.texts[-1].get_window_extent(renderer)
-
-    assert table_box.y1 < title_box.y0
-
-
-def test_all_panel_titles_have_same_vertical_position(qtbot):
-    """Заголовок таблицы находится на одной линии с заголовками графов."""
-
-    dfa = cycle_dfa(5)
-    view = AutomataGraphView()
-    qtbot.addWidget(view)
-    view.show_comparison(ProcessedDFA(dfa, dfa))
-    view.draw()
-
-    panel_titles = view.figure.texts[-3:]
-    assert len(panel_titles) == 3
+    panel_titles = view.figure.texts[-2:]
+    assert len(panel_titles) == 2
     assert len({title.get_position()[1] for title in panel_titles}) == 1
+
+
+def test_window_populates_transition_and_class_tabs(qtbot, tmp_path: Path):
+    window = MainWindow(DFAProcessingService(PTDFAMinimizer()))
+    qtbot.addWidget(window)
+    window.load_file(str(input_file(tmp_path)))
+
+    assert window.detail_tabs.count() == 3
+    assert [window.detail_tabs.tabText(i) for i in range(3)] == [
+        "Графы", "Переходы", "Классы"
+    ]
+    assert window.transitions_table.rowCount() == 2
+    assert window.transitions_table.item(0, 0).text().startswith("C")
+    assert "Начальное состояние: C0" in window.transition_info.text()
+    assert window.classes_table.rowCount() == 2
+    assert window.classes_table.item(0, 0).text() == "C0"
+    assert window.save_button.isEnabled()
+
+
+def test_save_button_exports_selected_result(qtbot, tmp_path: Path, monkeypatch):
+    window = MainWindow(DFAProcessingService(PTDFAMinimizer()))
+    qtbot.addWidget(window)
+    window.load_file(str(input_file(tmp_path)))
+    destination = tmp_path / "selected.csv"
+    monkeypatch.setattr(
+        "dfa_app.ui.main_window.QFileDialog.getSaveFileName",
+        lambda *_args, **_kwargs: (str(destination), "CSV (*.csv)"),
+    )
+
+    window.save_button.click()
+
+    assert destination.exists()
+    assert (tmp_path / "selected.classes.csv").exists()

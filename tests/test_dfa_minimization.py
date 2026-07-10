@@ -4,12 +4,13 @@ from collections.abc import Mapping
 from math import isnan
 
 from dfa_app.algorithms.pt_dfa_minimizer import PTDFAMinimizer
+from dfa_app.algorithms.base import MinimizationResult
 from dfa_app.domain.models import DFA, TransitionKey
 from dfa_app.domain.validation import validate_dfa
 
 
 def assert_minimized_dfa(
-    actual: DFA,
+    result: MinimizationResult,
     *,
     alphabet: tuple[str, ...],
     state_count: int,
@@ -19,6 +20,7 @@ def assert_minimized_dfa(
 ) -> None:
     """Проверяет все значимые части автомата после минимизации."""
 
+    actual = result.dfa
     # Алгоритм минимизации не должен изменять алфавит.
     assert actual.alphabet == alphabet
     # Состав состояний определяется ключами и значениями переходов,
@@ -139,13 +141,13 @@ def test_merges_equivalent_final_states() -> None:
         alphabet=("0", "1"),
         state_count=2,
         transitions={
-            ("{q0}", "0"): "{q1,q2}",
-            ("{q0}", "1"): "{q1,q2}",
-            ("{q1,q2}", "0"): "{q1,q2}",
-            ("{q1,q2}", "1"): "{q1,q2}",
+            ("C0", "0"): "C1",
+            ("C0", "1"): "C1",
+            ("C1", "0"): "C1",
+            ("C1", "1"): "C1",
         },
-        initial_state="{q0}",
-        final_states=frozenset({"{q1,q2}"}),
+        initial_state="C0",
+        final_states=frozenset({"C1"}),
     )
 
 
@@ -159,12 +161,12 @@ def test_minimizes_partial_transition_function() -> None:
         alphabet=("0", "1"),
         state_count=2,
         transitions={
-            ("{q0}", "0"): "{q1,q2}",
-            ("{q0}", "1"): "{q1,q2}",
-            ("{q1,q2}", "0"): "{q1,q2}",
+            ("C0", "0"): "C1",
+            ("C0", "1"): "C1",
+            ("C1", "0"): "C1",
         },
-        initial_state="{q0}",
-        final_states=frozenset({"{q1,q2}"}),
+        initial_state="C0",
+        final_states=frozenset({"C1"}),
     )
 
 
@@ -178,13 +180,13 @@ def test_keeps_distinguishable_states_separate() -> None:
         alphabet=("0", "1"),
         state_count=2,
         transitions={
-            ("{q0}", "0"): "{q0}",
-            ("{q0}", "1"): "{q1}",
-            ("{q1}", "0"): "{q0}",
-            ("{q1}", "1"): "{q1}",
+            ("C0", "0"): "C0",
+            ("C0", "1"): "C1",
+            ("C1", "0"): "C0",
+            ("C1", "1"): "C1",
         },
-        initial_state="{q0}",
-        final_states=frozenset({"{q1}"}),
+        initial_state="C0",
+        final_states=frozenset({"C1"}),
     )
 
 
@@ -198,12 +200,17 @@ def test_removes_unreachable_state_before_minimization() -> None:
         alphabet=("0",),
         state_count=2,
         transitions={
-            ("{q0}", "0"): "{q1}",
-            ("{q1}", "0"): "{q1}",
+            ("C0", "0"): "C1",
+            ("C1", "0"): "C1",
         },
-        initial_state="{q0}",
-        final_states=frozenset({"{q1}"}),
+        initial_state="C0",
+        final_states=frozenset({"C1"}),
     )
+    assert minimized.discarded_states == frozenset({"dead"})
+    assert minimized.classes == {
+        "C0": frozenset({"q0"}),
+        "C1": frozenset({"q1"}),
+    }
 
 
 def test_returns_empty_pt_dfa_for_empty_language() -> None:
@@ -216,7 +223,7 @@ def test_returns_empty_pt_dfa_for_empty_language() -> None:
         alphabet=("0",),
         state_count=1,
         transitions={},
-        initial_state="{пустой}",
+        initial_state="C0",
         final_states=frozenset(),
     )
 
@@ -230,9 +237,9 @@ def test_merges_all_equivalent_states() -> None:
         minimized,
         alphabet=("0",),
         state_count=1,
-        transitions={("{q0,q1}", "0"): "{q0,q1}"},
-        initial_state="{q0,q1}",
-        final_states=frozenset({"{q0,q1}"}),
+        transitions={("C0", "0"): "C0"},
+        initial_state="C0",
+        final_states=frozenset({"C0"}),
     )
 
 
@@ -246,21 +253,23 @@ def test_preserves_number_of_states_for_already_minimal_dfa() -> None:
         alphabet=("a",),
         state_count=3,
         transitions={
-            ("{q0}", "a"): "{q1}",
-            ("{q1}", "a"): "{q2}",
-            ("{q2}", "a"): "{q0}",
+            ("C0", "a"): "C1",
+            ("C1", "a"): "C2",
+            ("C2", "a"): "C0",
         },
-        initial_state="{q0}",
-        final_states=frozenset({"{q0}"}),
+        initial_state="C0",
+        final_states=frozenset({"C0"}),
     )
+    assert minimized.dfa.states == ("C0", "C1", "C2")
+    assert minimized.classes["C0"] == frozenset({"q0"})
 
 
-def test_keeps_generated_block_names_unique() -> None:
-    """Разные блоки не должны схлопываться из-за одинакового строкового имени."""
+def test_class_ids_do_not_depend_on_ambiguous_source_names() -> None:
+    """Имена C0… не должны зависеть от строкового представления состава."""
 
     # Блок из двух состояний {a, b} и блок из одного состояния с именем "a,b"
-    # имеют одинаковое естественное отображение "{a,b}". Алгоритм обязан
-    # различить их, иначе словарь переходов потеряет часть рёбер.
+    # имеют одинаковое представление "{a,b}". Отдельные идентификаторы классов
+    # исключают эту неоднозначность и не дают потерять переходы.
     dfa = DFA(
         states=("q0", "a", "b", "a,b"),
         alphabet=("0", "1", "2", "x"),
@@ -277,20 +286,26 @@ def test_keeps_generated_block_names_unique() -> None:
 
     minimized = PTDFAMinimizer().minimize(dfa)
 
-    validate_dfa(minimized)
+    validate_dfa(minimized.dfa)
     assert_minimized_dfa(
         minimized,
         alphabet=("0", "1", "2", "x"),
         state_count=3,
         transitions={
-            ("{a,b}", "x"): "{a,b}",
-            ("{q0}", "0"): "{a,b}",
-            ("{q0}", "1"): "{a,b}",
-            ("{q0}", "2"): "{a,b}#2",
+            ("C1", "x"): "C1",
+            ("C0", "0"): "C1",
+            ("C0", "1"): "C1",
+            ("C0", "2"): "C2",
         },
-        initial_state="{q0}",
-        final_states=frozenset({"{a,b}", "{a,b}#2"}),
+        initial_state="C0",
+        final_states=frozenset({"C1", "C2"}),
     )
+
+    assert minimized.classes == {
+        "C0": frozenset({"q0"}),
+        "C1": frozenset({"a", "b"}),
+        "C2": frozenset({"a,b"}),
+    }
 
 
 def test_metadata_contains_callable_bounds() -> None:

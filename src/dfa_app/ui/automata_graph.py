@@ -51,21 +51,16 @@ class AutomataGraphView(FigureCanvasQTAgg):
         """Показывает пустые панели до загрузки корректного автомата."""
 
         self.figure.clear()
-        source_axes, minimized_axes, classes_axes = self._create_axes()
+        source_axes, minimized_axes = self._create_axes()
         self._show_placeholder(source_axes, "Исходный автомат")
         self._show_placeholder(minimized_axes, "Минимизированный автомат")
-        self._show_placeholder(classes_axes, "Состав новых состояний")
         self.draw_idle()
 
     def show_comparison(self, item: ProcessedDFA) -> None:
         """Перерисовывает обе панели для одной выбранной строки результата."""
 
         self.figure.clear()
-        source_axes, minimized_axes, classes_axes = self._create_axes()
-        display_names = {
-            state: f"M{index}"
-            for index, state in enumerate(item.minimized.states)
-        }
+        source_axes, minimized_axes = self._create_axes()
 
         self._draw_automaton(
             source_axes,
@@ -80,9 +75,7 @@ class AutomataGraphView(FigureCanvasQTAgg):
             title=f"Минимизированный · {item.minimized.size} сост.",
             node_color="#dcfce7",
             border_color="#16a34a",
-            display_names=display_names,
         )
-        self._draw_classes_table(classes_axes, item.minimized, display_names)
 
         # Явные поля стабильнее tight_layout для сочетания квадратных графов и
         # таблицы: автоматическая компоновка могла обрезать заголовки сверху.
@@ -93,7 +86,7 @@ class AutomataGraphView(FigureCanvasQTAgg):
             top=0.91,
             wspace=0.22,
         )
-        self._align_panel_titles(source_axes, minimized_axes, classes_axes)
+        self._align_panel_titles(source_axes, minimized_axes)
         self.draw_idle()
 
     def _align_panel_titles(self, *panels: Axes) -> None:
@@ -118,14 +111,13 @@ class AutomataGraphView(FigureCanvasQTAgg):
                 fontweight="semibold",
             )
 
-    def _create_axes(self) -> tuple[Axes, Axes, Axes]:
-        """Создаёт две панели графов и правую панель таблицы соответствий."""
+    def _create_axes(self) -> tuple[Axes, Axes]:
+        """Создаёт две равноправные панели сравнения автоматов."""
 
-        grid = self.figure.add_gridspec(1, 3, width_ratios=(1.0, 1.0, 0.72))
+        grid = self.figure.add_gridspec(1, 2, width_ratios=(1.0, 1.0))
         return (
             self.figure.add_subplot(grid[0, 0]),
             self.figure.add_subplot(grid[0, 1]),
-            self.figure.add_subplot(grid[0, 2]),
         )
 
     def _show_placeholder(self, axes: Axes, title: str) -> None:
@@ -314,83 +306,6 @@ class AutomataGraphView(FigureCanvasQTAgg):
             va="top",
             fontsize=8.5,
             color="#64748b",
-        )
-
-    def _draw_classes_table(
-        self,
-        axes: Axes,
-        minimized: DFA,
-        display_names: dict[str, str],
-    ) -> None:
-        """Расшифровывает короткие имена состояний минимизированного ДКА."""
-
-        axes.set_title(
-            "Состав новых состояний",
-            fontsize=13,
-            fontweight="semibold",
-            pad=14,
-        )
-        axes.set_axis_off()
-        if minimized.size > self.MAX_DRAWN_STATES:
-            axes.text(
-                0.5,
-                0.58,
-                "Таблица классов доступна\n"
-                "для автоматов до 15 состояний",
-                transform=axes.transAxes,
-                ha="center",
-                va="center",
-                fontsize=10,
-                color="#64748b",
-            )
-            return
-
-        rows = [
-            (display_names[state], self._class_members_text(state))
-            for state in minimized.states
-        ]
-        table = axes.table(
-            cellText=rows,
-            colLabels=("Новое", "Исходные состояния"),
-            colWidths=(0.28, 0.72),
-            cellLoc="left",
-            colLoc="left",
-            # Таблица занимает отдельную область ниже заголовка. Явный bbox
-            # не позволяет шапке подняться и наложиться на заголовок панели.
-            bbox=(0.0, 0.03, 1.0, 0.72),
-        )
-        table.auto_set_font_size(False)
-        table.set_fontsize(8.5)
-        # Высоту каждой строки определяет число строк текста. Общая сумма
-        # ограничена высотой панели, поэтому даже длинные классы не выходят за
-        # нижнюю границу таблицы.
-        line_counts = [max(1, members.count("\n") + 1) for _, members in rows]
-        total_units = 1.15 + sum(line_counts)
-        header_height = 0.82 * 1.15 / total_units
-        for (row, _column), cell in table.get_celld().items():
-            cell.set_edgecolor("#cbd5e1")
-            cell.set_linewidth(0.6)
-            cell.set_facecolor("#e2e8f0" if row == 0 else "#ffffff")
-            if row == 0:
-                cell.set_height(header_height)
-                cell.get_text().set_fontweight("semibold")
-            else:
-                cell.set_height(0.82 * line_counts[row - 1] / total_units)
-
-    def _class_members_text(self, canonical_name: str) -> str:
-        """Преобразует каноническое ``{q0,q1}#2`` в ``q0, q1``."""
-
-        base_name = canonical_name.rsplit("#", 1)[0]
-        if base_name.startswith("{") and base_name.endswith("}"):
-            base_name = base_name[1:-1]
-        readable_name = base_name.replace(",", ", ")
-        return "\n".join(
-            wrap(
-                readable_name,
-                width=25,
-                break_long_words=True,
-                break_on_hyphens=False,
-            )
         )
 
     def _show_large_automaton_summary(

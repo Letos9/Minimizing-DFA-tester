@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dfa_app.algorithms.base import AlgorithmMetadata, DFAMinimizer
+from dfa_app.algorithms.base import AlgorithmMetadata, DFAMinimizer, MinimizationResult
 from dfa_app.domain.models import DFA
 from dfa_app.services.processing import DFAProcessingService
 
@@ -14,11 +14,15 @@ class RecordingMinimizer(DFAMinimizer):
     def metadata(self) -> AlgorithmMetadata:
         return AlgorithmMetadata("test", "O(n²)", "Ω(n)", lambda n, _: n * n, lambda n, _: n)
 
-    def minimize(self, dfa: DFA) -> DFA:
+    def minimize(self, dfa: DFA) -> MinimizationResult:
         self.calls += 1
         if self.fail:
             raise RuntimeError("boom")
-        return dfa
+        return MinimizationResult(
+            dfa=dfa,
+            classes={state: frozenset({state}) for state in dfa.states},
+            discarded_states=frozenset(),
+        )
 
 
 def make_file(path: Path) -> None:
