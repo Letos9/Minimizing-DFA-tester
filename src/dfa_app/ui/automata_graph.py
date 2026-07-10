@@ -36,8 +36,12 @@ class AutomataGraphView(FigureCanvasQTAgg):
     оставляет все правила изображения в одном хорошо проверяемом месте.
     """
 
+    # После 15 состояний круговая схема перестаёт быть читаемой: узлы, стрелки
+    # и подписи начинают сливаться. Большие автоматы показываются сводкой.
+    MAX_DRAWN_STATES = 15
+
     def __init__(self) -> None:
-        self.figure = Figure(figsize=(11, 5.5), tight_layout=True)
+        self.figure = Figure(figsize=(11, 5.5))
         self.figure.set_facecolor("#f8fafc")
         super().__init__(self.figure)
         self.setObjectName("automataGraphView")
@@ -47,16 +51,21 @@ class AutomataGraphView(FigureCanvasQTAgg):
         """Показывает пустые панели до загрузки корректного автомата."""
 
         self.figure.clear()
-        source_axes, minimized_axes = self.figure.subplots(1, 2)
+        source_axes, minimized_axes, classes_axes = self._create_axes()
         self._show_placeholder(source_axes, "Исходный автомат")
         self._show_placeholder(minimized_axes, "Минимизированный автомат")
+        self._show_placeholder(classes_axes, "Состав новых состояний")
         self.draw_idle()
 
     def show_comparison(self, item: ProcessedDFA) -> None:
         """Перерисовывает обе панели для одной выбранной строки результата."""
 
         self.figure.clear()
-        source_axes, minimized_axes = self.figure.subplots(1, 2)
+        source_axes, minimized_axes, classes_axes = self._create_axes()
+        display_names = {
+            state: f"M{index}"
+            for index, state in enumerate(item.minimized.states)
+        }
 
         self._draw_automaton(
             source_axes,
@@ -71,10 +80,53 @@ class AutomataGraphView(FigureCanvasQTAgg):
             title=f"Минимизированный · {item.minimized.size} сост.",
             node_color="#dcfce7",
             border_color="#16a34a",
+            display_names=display_names,
         )
+        self._draw_classes_table(classes_axes, item.minimized, display_names)
 
-        self.figure.tight_layout(pad=2.0)
+        # Явные поля стабильнее tight_layout для сочетания квадратных графов и
+        # таблицы: автоматическая компоновка могла обрезать заголовки сверху.
+        self.figure.subplots_adjust(
+            left=0.035,
+            right=0.985,
+            bottom=0.08,
+            top=0.91,
+            wspace=0.22,
+        )
+        self._align_panel_titles(source_axes, minimized_axes, classes_axes)
         self.draw_idle()
+
+    def _align_panel_titles(self, *panels: Axes) -> None:
+        """Создаёт единый ряд заголовков в координатах всей фигуры."""
+
+        # Нельзя переносить сам объект Axes.title в другую систему координат:
+        # backend Qt/Matplotlib может некорректно очистить холст при resize.
+        # Вместо этого штатные заголовки скрываются, а видимые надписи создаются
+        # как Figure.text. Их вертикаль общая и не зависит от aspect панелей.
+        title_y = 0.90
+        for axes in panels:
+            title_text = axes.get_title()
+            axes.title.set_visible(False)
+            box = axes.get_position(original=True)
+            self.figure.text(
+                box.x0 + box.width / 2,
+                title_y,
+                title_text,
+                ha="center",
+                va="center",
+                fontsize=13,
+                fontweight="semibold",
+            )
+
+    def _create_axes(self) -> tuple[Axes, Axes, Axes]:
+        """Создаёт две панели графов и правую панель таблицы соответствий."""
+
+        grid = self.figure.add_gridspec(1, 3, width_ratios=(1.0, 1.0, 0.72))
+        return (
+            self.figure.add_subplot(grid[0, 0]),
+            self.figure.add_subplot(grid[0, 1]),
+            self.figure.add_subplot(grid[0, 2]),
+        )
 
     def _show_placeholder(self, axes: Axes, title: str) -> None:
         axes.set_title(title, fontsize=13, fontweight="semibold", pad=14)
@@ -98,11 +150,9 @@ class AutomataGraphView(FigureCanvasQTAgg):
         title: str,
         node_color: str,
         border_color: str,
+        display_names: dict[str, str] | None = None,
     ) -> None:
         """Рисует один DFA с начальными, финальными состояниями и переходами."""
-
-        positions = self._circular_positions(dfa.states)
-        node_radius = self._node_radius(dfa.size)
 
         axes.set_title(title, fontsize=13, fontweight="semibold", pad=14)
         axes.set_aspect("equal")
@@ -112,6 +162,20 @@ class AutomataGraphView(FigureCanvasQTAgg):
         axes.set_xlim(-1.65, 1.65)
         axes.set_ylim(-1.65, 1.65)
         axes.set_axis_off()
+
+        transition_count = len(dfa.transitions)
+        if dfa.size > self.MAX_DRAWN_STATES:
+            self._show_large_automaton_summary(
+                axes,
+                dfa,
+                transition_count,
+                border_color,
+            )
+            return
+
+        detailed = True
+        positions = self._circular_positions(dfa.states)
+        node_radius = self._node_radius(dfa.size)
 
         # Сначала создаём окружности, чтобы рёбра могли использовать их как
         # границы: FancyArrowPatch тогда заканчивает стрелку у края состояния,
@@ -144,16 +208,22 @@ class AutomataGraphView(FigureCanvasQTAgg):
                     )
                 )
 
-            axes.text(
-                x,
-                y,
-                self._display_state_name(state),
-                ha="center",
-                va="center",
-                fontsize=self._label_font_size(dfa.size),
-                color="#0f172a",
-                zorder=5,
-            )
+            # В среднем режиме подписи узлов сохраняются только пока они ещё
+            # различимы. Для десятков мелких окружностей текст создаёт больше
+            # шума и объектов Matplotlib, чем полезной информации.
+            if detailed or dfa.size <= 60:
+                axes.text(
+                    x,
+                    y,
+                    self._display_state_name(
+                        display_names.get(state, state) if display_names else state
+                    ),
+                    ha="center",
+                    va="center",
+                    fontsize=self._label_font_size(dfa.size),
+                    color="#0f172a",
+                    zorder=5,
+                )
 
         grouped_transitions: dict[tuple[str, str], list[str]] = defaultdict(list)
         for (source, symbol), target in dfa.transitions.items():
@@ -175,8 +245,9 @@ class AutomataGraphView(FigureCanvasQTAgg):
                     border_color,
                     avoid_left=source == dfa.initial_state,
                 )
-                protected_paths.append(loop_path)
-                edge_labels.append(_EdgeLabel(label, loop_path))
+                if detailed:
+                    protected_paths.append(loop_path)
+                    edge_labels.append(_EdgeLabel(label, loop_path))
                 continue
 
             reverse_exists = (target, source) in grouped_transitions
@@ -187,47 +258,52 @@ class AutomataGraphView(FigureCanvasQTAgg):
                 patchA=node_patches[source],
                 patchB=node_patches[target],
                 arrowstyle="-|>",
-                mutation_scale=13,
+                mutation_scale=13 if detailed else 7,
                 connectionstyle=f"arc3,rad={curvature}",
                 color="#475569",
-                linewidth=1.5,
+                linewidth=1.5 if detailed else 0.65,
+                alpha=1.0 if detailed else 0.55,
                 zorder=2,
             )
             axes.add_patch(arrow)
-            edge_path = self._sample_edge_path(
-                positions[source],
-                positions[target],
-                curvature,
-            )
-            protected_paths.append(edge_path)
-            edge_labels.append(_EdgeLabel(label, edge_path))
+            if detailed:
+                edge_path = self._sample_edge_path(
+                    positions[source],
+                    positions[target],
+                    curvature,
+                )
+                protected_paths.append(edge_path)
+                edge_labels.append(_EdgeLabel(label, edge_path))
 
-        protected_paths.append(self._draw_initial_arrow(
+        initial_path = self._draw_initial_arrow(
             axes,
             positions[dfa.initial_state],
             node_radius,
             border_color,
-        ))
+        )
+        if detailed:
+            protected_paths.append(initial_path)
 
         # Окружности состояний сразу считаются занятыми прямоугольниками.
         # Небольшой запас запрещает подписи вплотную прижиматься к контуру.
-        occupied: list[LabelBox] = [
-            (
-                x - node_radius * 1.35,
-                y - node_radius * 1.35,
-                x + node_radius * 1.35,
-                y + node_radius * 1.35,
-            )
-            for x, y in positions.values()
-        ]
+        if detailed:
+            occupied: list[LabelBox] = [
+                (
+                    x - node_radius * 1.35,
+                    y - node_radius * 1.35,
+                    x + node_radius * 1.35,
+                    y + node_radius * 1.35,
+                )
+                for x, y in positions.values()
+            ]
 
-        for edge_label in edge_labels:
-            self._draw_edge_label(
-                axes,
-                edge_label,
-                occupied,
-                protected_paths,
-            )
+            for edge_label in edge_labels:
+                self._draw_edge_label(
+                    axes,
+                    edge_label,
+                    occupied,
+                    protected_paths,
+                )
 
         axes.text(
             0.5,
@@ -238,6 +314,132 @@ class AutomataGraphView(FigureCanvasQTAgg):
             va="top",
             fontsize=8.5,
             color="#64748b",
+        )
+
+    def _draw_classes_table(
+        self,
+        axes: Axes,
+        minimized: DFA,
+        display_names: dict[str, str],
+    ) -> None:
+        """Расшифровывает короткие имена состояний минимизированного ДКА."""
+
+        axes.set_title(
+            "Состав новых состояний",
+            fontsize=13,
+            fontweight="semibold",
+            pad=14,
+        )
+        axes.set_axis_off()
+        if minimized.size > self.MAX_DRAWN_STATES:
+            axes.text(
+                0.5,
+                0.58,
+                "Таблица классов доступна\n"
+                "для автоматов до 15 состояний",
+                transform=axes.transAxes,
+                ha="center",
+                va="center",
+                fontsize=10,
+                color="#64748b",
+            )
+            return
+
+        rows = [
+            (display_names[state], self._class_members_text(state))
+            for state in minimized.states
+        ]
+        table = axes.table(
+            cellText=rows,
+            colLabels=("Новое", "Исходные состояния"),
+            colWidths=(0.28, 0.72),
+            cellLoc="left",
+            colLoc="left",
+            # Таблица занимает отдельную область ниже заголовка. Явный bbox
+            # не позволяет шапке подняться и наложиться на заголовок панели.
+            bbox=(0.0, 0.03, 1.0, 0.72),
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(8.5)
+        # Высоту каждой строки определяет число строк текста. Общая сумма
+        # ограничена высотой панели, поэтому даже длинные классы не выходят за
+        # нижнюю границу таблицы.
+        line_counts = [max(1, members.count("\n") + 1) for _, members in rows]
+        total_units = 1.15 + sum(line_counts)
+        header_height = 0.82 * 1.15 / total_units
+        for (row, _column), cell in table.get_celld().items():
+            cell.set_edgecolor("#cbd5e1")
+            cell.set_linewidth(0.6)
+            cell.set_facecolor("#e2e8f0" if row == 0 else "#ffffff")
+            if row == 0:
+                cell.set_height(header_height)
+                cell.get_text().set_fontweight("semibold")
+            else:
+                cell.set_height(0.82 * line_counts[row - 1] / total_units)
+
+    def _class_members_text(self, canonical_name: str) -> str:
+        """Преобразует каноническое ``{q0,q1}#2`` в ``q0, q1``."""
+
+        base_name = canonical_name.rsplit("#", 1)[0]
+        if base_name.startswith("{") and base_name.endswith("}"):
+            base_name = base_name[1:-1]
+        readable_name = base_name.replace(",", ", ")
+        return "\n".join(
+            wrap(
+                readable_name,
+                width=25,
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+        )
+
+    def _show_large_automaton_summary(
+        self,
+        axes: Axes,
+        dfa: DFA,
+        transition_count: int,
+        color: str,
+    ) -> None:
+        """Показывает безопасную сводку вместо тысяч графических объектов."""
+
+        axes.text(
+            0.5,
+            0.62,
+            "ДКА содержит больше 15 состояний\nи не выводится в виде графа",
+            transform=axes.transAxes,
+            ha="center",
+            va="center",
+            fontsize=15,
+            fontweight="semibold",
+            color="#0f172a",
+        )
+        axes.text(
+            0.5,
+            0.43,
+            (
+                f"Состояний: {dfa.size:,}\n"
+                f"Переходов: {transition_count:,}\n"
+                f"Финальных: {len(dfa.final_states):,}"
+            ).replace(",", " "),
+            transform=axes.transAxes,
+            ha="center",
+            va="center",
+            fontsize=12,
+            color=color,
+            linespacing=1.5,
+        )
+        axes.text(
+            0.5,
+            0.23,
+            "Минимизация выполнена.\n"
+            "Ограничение сохраняет схему читаемой\n"
+            "и защищает интерфейс от перегрузки.",
+            transform=axes.transAxes,
+            ha="center",
+            va="center",
+            fontsize=9.5,
+            color="#64748b",
+            wrap=True,
         )
 
     def _draw_loop(
@@ -542,7 +744,9 @@ class AutomataGraphView(FigureCanvasQTAgg):
             return 0.16
         if state_count <= 14:
             return 0.12
-        return 0.09
+        # Радиус уменьшается вместе с расстоянием между точками окружности,
+        # иначе в упрощённом режиме соседние состояния перекрывают друг друга.
+        return max(0.018, min(0.09, 2.4 / state_count))
 
     def _label_font_size(self, state_count: int) -> float:
         if state_count <= 8:
