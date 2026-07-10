@@ -37,15 +37,5 @@ def validate_dfa(dfa: DFA) -> None:
         if target not in states:
             errors.append(f"неизвестное целевое состояние перехода: {target}")
 
-    missing = [
-        f"({state}, {symbol})"
-        for state in dfa.states
-        for symbol in dfa.alphabet
-        if (state, symbol) not in dfa.transitions
-    ]
-    if missing:
-        errors.append(f"не заданы переходы: {', '.join(missing)}")
-
     if errors:
         raise DFAValidationError(errors)
-

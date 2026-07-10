@@ -22,7 +22,7 @@ s2 -> s2[label="1"]
 
 def test_load_csv_skips_invalid_rows(tmp_path: Path):
     path = tmp_path / "automata.csv"
-    path.write_text(HEADER + VALID + "q0;0;;q0;q0\n", encoding="utf-8")
+    path.write_text(HEADER + VALID + "q0;0;q0,0->missing;q0;q0\n", encoding="utf-8")
 
     loaded = load_automata(path)
 

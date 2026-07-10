@@ -1,0 +1,7 @@
+states;alphabet;transitions;initial;finals
+q0|q1|q2|q3|q4;0|1;q0,0->q1|q0,1->q2|q1,0->q3|q1,1->q4|q2,0->q3|q2,1->q4|q3,0->q3|q3,1->q4|q4,0->q3|q4,1->q4;q0;q3|q4
+p0|p1|p2|p3|p4|p5|p6;a|b|c;p0,a->p1|p0,b->p2|p0,c->p3|p1,a->p4|p2,a->p5|p3,a->p6|p4,b->p4|p5,b->p5|p6,b->p6;p0;p4|p5|p6
+start|seen0|accept|dead|u1|u2;0|1|2;start,0->seen0|start,1->start|start,2->dead|seen0,0->seen0|seen0,1->accept|seen0,2->dead|accept,0->accept|accept,1->accept|accept,2->accept|dead,0->dead|dead,1->dead|dead,2->dead|u1,0->u2|u1,1->u1|u1,2->u1|u2,0->u2|u2,1->u2|u2,2->u2;start;accept|u2
+v0|v1|v2|v3|v4;a|b|c;v0,a->v0|v0,b->v1|v0,c->v2|v1,a->v0|v1,b->v2|v1,c->v3|v2,a->v1|v2,b->v2|v2,c->v4|v3,a->v4|v3,b->v1|v3,c->v3|v4,a->v3|v4,b->v0|v4,c->v4;v0;v2|v4
+e0|e1|e2|e3;x|y;e0,x->e1|e0,y->e2|e1,x->e2|e1,y->e3|e2,x->e3|e2,y->e0|e3,x->e3|e3,y->e3;e0;
+A|B|C|D|E|F|G|H;0|1;A,0->B|A,1->F|B,0->G|B,1->C|C,0->A|C,1->C|D,0->C|D,1->G|E,0->H|E,1->F|F,0->C|F,1->G|G,0->G|G,1->E|H,0->G|H,1->C;A;C

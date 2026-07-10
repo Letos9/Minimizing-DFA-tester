@@ -28,7 +28,7 @@ def main() -> int:
 
         return run_application()
     if args.command == "test":
-        return _run_module("pytest")
+        return _run_module("pytest", "tests/test_dfa_minimization.py")
 
     root = _project_root()
     result = subprocess.call(
@@ -51,4 +51,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

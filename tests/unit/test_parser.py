@@ -19,6 +19,16 @@ def test_parse_row_builds_dfa():
     assert dfa.transitions[("q0", "1")] == "q1"
 
 
+def test_parse_row_allows_partial_transition_function():
+    row = dict(VALID_ROW)
+    row["transitions"] = "q0,1->q1"
+
+    dfa = parse_row(row)
+
+    assert dict(dfa.transitions) == {("q0", "1"): "q1"}
+    assert ("q0", "0") not in dfa.transitions
+
+
 def test_duplicate_transition_is_rejected():
     row = dict(VALID_ROW)
     row["transitions"] += "|q0,0->q1"
@@ -33,4 +43,3 @@ def test_bad_transition_syntax_is_rejected():
 
     with pytest.raises(RowParseError, match="ожидается"):
         parse_row(row)
-
